@@ -563,13 +563,22 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     // The drivers ask for their firmware by name, and the kernel looks only
     // in folders of its own unless told to pass on what it does not find
     // there to ueventd, which looks in the recovery's firmware folders.
-    std::fs::write(FIRMWARE_FALLBACK, "1").with_context(|| format!("write 1 to {FIRMWARE_FALLBACK}"))?;
-    if let Some(firmware) = &cfg.firmware {
-        mount_firmware(&firmware.partition)?;
+    // What a policy keeps from the recovery here still leaves the screen
+    // and the keys working, so each goes to the kernel log and the rest of
+    // the phone's devices are brought up all the same.
+    if let Err(e) = std::fs::write(FIRMWARE_FALLBACK, "1") {
+        skyward_sys::kmsg(&format!("the firmware loader is not told to fall back: {e:#}"))?;
+    }
+    if let Some(firmware) = &cfg.firmware
+        && let Err(e) = mount_firmware(&firmware.partition)
+    {
+        skyward_sys::kmsg(&format!("the firmware partition is not mounted: {e:#}"))?;
     }
     for name in &cfg.partitions.mounted {
-        let at = skyward_block::fstab::mount(name)?;
-        skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?;
+        match skyward_block::fstab::mount(name) {
+            Ok(at) => skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?,
+            Err(e) => skyward_sys::kmsg(&format!("{name} is not mounted: {e:#}"))?,
+        }
     }
     for path in load_modules(cfg, &cfg.modules.load)? {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;

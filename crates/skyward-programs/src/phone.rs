@@ -371,9 +371,18 @@ impl Phone {
             let Some(partition) = self.partitions.iter().find(|p| p.name == name) else { continue };
             let folder = partition.at.join(DESCRIPTIONS);
             let mut files = Vec::new();
+            // A phone that serves several builds from one partition names
+            // each build's description after it; one that names no build
+            // keeps a description for the hardware it runs, as some phones
+            // do, named after the platform.
             let main = match self.properties.get(build) {
                 Some(build) if !build.is_empty() => format!("manifest_{build}.xml"),
-                _ => "manifest.xml".to_string(),
+                _ => match self.properties.get("ro.board.platform") {
+                    Some(platform) if !platform.is_empty() && folder.join(format!("manifest_{platform}.xml")).is_file() => {
+                        format!("manifest_{platform}.xml")
+                    }
+                    _ => "manifest.xml".to_string(),
+                },
             };
             if folder.join(&main).is_file() {
                 files.push(main);

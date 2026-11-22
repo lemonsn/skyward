@@ -37,6 +37,7 @@ mod services;
 mod settings;
 #[cfg(target_os = "android")]
 mod systems;
+mod trace;
 #[cfg(target_os = "android")]
 mod ui;
 #[cfg(target_os = "android")]
@@ -759,6 +760,7 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
 fn recovery() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
+        trace::mark("recovery service started");
         // Open to the programs the recovery runs as other users, the
         // supplicant among them, whatever the umask.
         std::fs::create_dir_all(skyward_sys::RUN).with_context(|| format!("make {}", skyward_sys::RUN))?;
@@ -778,6 +780,7 @@ fn recovery() -> Result<()> {
             bcb::clear(&misc)?;
         }
         let cfg = DeviceConfig::load(Path::new("/").join(ramdisk::CONFIG))?;
+        trace::mark("configuration read");
         skyward_sys::kmsg(&format!(
             "{} {} recovery up, misc command {:?} args {:?}, asking for {:?}",
             cfg.device.codename,
@@ -830,10 +833,13 @@ fn recovery() -> Result<()> {
             // partitions the system asks for, as in Android's own recovery:
             // erasing them, which may take super with them, and undoing
             // shared blocks, which writes to the slot's own.
+            trace::mark("mounting the slot's partitions");
             let mut programs = cfg.services.clone();
             if !matches!(request.work, bcb::Work::Fastboot | bcb::Work::WipeAb { .. } | bcb::Work::UnshareBlocks) {
                 programs.extend(prepare(&cfg, booted_slot()?)?);
             }
+            trace::mark("partitions and devices ready");
+            trace::mark("opening the UI");
             let root = Path::new("/");
             ui::run(&cfg, &programs, &root.join(ramdisk::FONT), &root.join(ramdisk::MONO), request, Screen::Home, None)
         }
@@ -843,6 +849,7 @@ fn recovery() -> Result<()> {
         }
     };
     run().inspect_err(|e| {
+        trace::mark(&format!("failed: {e:#}"));
         let _ = skyward_sys::kmsg(&format!("recovery failed: {e:#}"));
     })
 }
@@ -856,6 +863,7 @@ fn recovery() -> Result<()> {
 fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<Vec<skyward_config::Service>> {
     match skyward_vab::mount_partitions(slot) {
         Ok(mounts) => {
+            trace::mark("super mapped and mounted");
             for d in &mounts.damaged {
                 skyward_sys::kmsg(&format!("super: {d}"))?;
             }
@@ -863,12 +871,15 @@ fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<Vec<skyward_co
                 skyward_sys::kmsg(&format!("mounted {} on {} ({})", m.partition, m.mount_point.display(), m.filesystem))?;
             }
             let found = secure::libraries().and_then(|libraries| keys::found(slot, libraries.as_deref()));
+            trace::mark("the phone's keys were made out");
             let steps = found.as_ref().ok().and_then(|found| found.steps.as_deref().ok());
             let programs = steps.map(keys::programs).unwrap_or_default();
             // Without them the screen still shows and the keys still work,
             // so this reason goes to the kernel log as well.
+            trace::mark("bringing the devices up");
             if let Err(e) = bring_up(cfg, slot, found) {
                 skyward_sys::kmsg(&format!("devices not brought up: {e:#}"))?;
+                trace::mark(&format!("devices not brought up: {e:#}"));
             }
             Ok(programs)
         }

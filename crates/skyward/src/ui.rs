@@ -1105,6 +1105,7 @@ fn job_end(end: filework::End) -> JobEnd {
 pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, request: bcb::Request, start: Screen, dump: Option<&Path>) -> Result<()> {
     let mut pages = Pages::open(cfg, programs, font, mono, request, start, dump)?;
     pages.begin()?;
+    crate::trace::mark("the first page is up");
     // The phone sleeps while its screen is off and nothing needs it awake.
     let sleeper = Sleeper::start()?;
     // A uevent may be a charger or a computer attached or taken away: the
@@ -1252,7 +1253,9 @@ impl<'a> Pages<'a> {
         untaken(&mut unread.battery, "the battery", battery.as_ref().err())?;
         let info = skyward_info::collect_with(cfg, battery.unwrap_or_default())?;
         let fonts = Fonts::load(font, 0, mono)?;
+        crate::trace::mark("fonts loaded");
         let mut surface = KmsSurface::open("/dev/dri/card0")?;
+        crate::trace::mark("KMS surface open");
         let (w, h) = surface.size();
         // A touch controller that follows the panel wakes as the panel goes
         // from rest to running, and at no other time. The recovery service
@@ -1267,10 +1270,13 @@ impl<'a> Pages<'a> {
         }
         eprintln!("display {}", surface.describe());
         let inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
+        crate::trace::mark("inputs open");
         let started = Instant::now();
         let control = Control::open()?;
+        crate::trace::mark("control open");
         let haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
         let backlight = Backlight::open()?;
+        crate::trace::mark("backlight open");
         let first = match &request.work {
             Work::Fastboot => Screen::Fastboot,
             Work::PromptWipeData => Screen::CantStart,
@@ -1295,6 +1301,7 @@ impl<'a> Pages<'a> {
         // system named with the work it asks for, or the one the installed
         // system is built to start in, or else the one they last spoke.
         let kept = settings::read()?;
+        crate::trace::mark("settings read");
         let locale = request.locale.as_deref().or(info.locale.as_deref());
         let named = locale.map(Lang::for_locale).transpose()?;
         app.take_settings(kept.settings(), named);
@@ -1379,6 +1386,7 @@ impl<'a> Pages<'a> {
                 app.report(&format!("{e:#}"), monotonic_ms());
             }
         }
+        crate::trace::mark("pages open");
         Ok(Pages {
             cfg,
             programs,
@@ -1446,6 +1454,7 @@ impl<'a> Pages<'a> {
     /// start left under way, and bring the port and the WLAN to where the
     /// pages start from.
     fn begin(&mut self) -> Result<()> {
+        crate::trace::mark("the first page is begun");
         let cfg = self.cfg;
         match &self.request.work {
             Work::WipeData { reformat } => {

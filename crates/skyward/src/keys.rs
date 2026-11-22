@@ -68,15 +68,20 @@ fn read(slot: skyward_vab::Slot, libraries: Option<&Path>) -> Result<Phone> {
 fn name(does: &[Does]) -> Result<()> {
     for one in does {
         match one {
-            Does::Run(program) => {
-                let status = crate::services::once(program)?;
-                skyward_sys::kmsg(&format!("ran {} {}, which ended: {status}", program.service.path, program.service.args.join(" ")))?;
-            }
-            Does::Set { name, value } => match phone::expand(value, skyward_sys::prop) {
-                Some(value) => {
-                    skyward_sys::set_prop(name, &value)?;
-                    skyward_sys::kmsg(&format!("{name} is {value}, as the phone's init sets it"))?;
+            // A policy may keep a recovery from running one of the phone's
+            // scripts, or from setting a property; the properties the rest
+            // of the phone describes still name its keys' programs.
+            Does::Run(program) => match crate::services::once(program) {
+                Ok(status) => {
+                    skyward_sys::kmsg(&format!("ran {} {}, which ended: {status}", program.service.path, program.service.args.join(" ")))?;
                 }
+                Err(e) => skyward_sys::kmsg(&format!("{} is not run as the phone's init runs it: {e:#}", program.service.path))?,
+            },
+            Does::Set { name, value } => match phone::expand(value, skyward_sys::prop) {
+                Some(value) => match skyward_sys::set_prop(name, &value) {
+                    Ok(()) => skyward_sys::kmsg(&format!("{name} is {value}, as the phone's init sets it"))?,
+                    Err(e) => skyward_sys::kmsg(&format!("{name} is left as it is: {e:#}"))?,
+                },
                 None => skyward_sys::kmsg(&format!("{name} stays unset, as the phone's init leaves it: nothing has set what {value} names"))?,
             },
         }

@@ -147,10 +147,13 @@ fn nodes(dir: &std::path::Path) -> anyhow::Result<Vec<String>> {
         let listing = match std::fs::read_dir(&dir) {
             Ok(listing) => listing,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e).with_context(|| format!("read {}", dir.display())),
+            // A policy may keep a folder of nodes from being listed; the
+            // nodes in it are left as the kernel made them, and the rest of
+            // the phone still gets what its rules say.
+            Err(_) => continue,
         };
         for entry in listing {
-            let entry = entry.with_context(|| format!("read {}", dir.display()))?;
+            let Ok(entry) = entry else { continue };
             let kind = entry.file_type().with_context(|| format!("look at {}", entry.path().display()))?;
             if kind.is_symlink() {
                 continue;

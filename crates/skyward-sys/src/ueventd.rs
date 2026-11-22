@@ -129,8 +129,11 @@ pub fn apply() -> anyhow::Result<usize> {
     let mut changed = 0;
     for node in nodes(Path::new("/dev"))? {
         if let Some(rule) = rules.iter().rev().find(|r| r.matches(&node)) {
-            set(&node, rule).with_context(|| format!("give {node} the owner and permissions its phone describes"))?;
-            changed += 1;
+            // A policy may keep a node from being handed over; the rest are
+            // still given what the phone's rules say.
+            if set(&node, rule).is_ok() {
+                changed += 1;
+            }
         }
     }
     Ok(changed)

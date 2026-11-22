@@ -13,12 +13,40 @@ const KERNEL_GROUP: u32 = 1;
 /// The kernel's uevent socket. A uevent keeps the phone awake until it is
 /// read.
 pub struct Listener {
-    socket: OwnedFd,
+    socket: Option<OwnedFd>,
+    /// Kept open where the socket could not be made, so the read end of the
+    /// pipe beside it never reports.
+    _idle: Option<OwnedFd>,
     wakeful: Wakeful,
 }
 
 impl Listener {
     pub fn open() -> Result<Listener> {
+        match Self::socket() {
+            Ok(socket) => {
+                let wakeful = Wakeful::new()?;
+                wakeful.add(socket.as_raw_fd())?;
+                Ok(Listener { socket: Some(socket), _idle: None, wakeful })
+            }
+            // A policy may keep the kernel's uevents from the recovery. What
+            // changed is then read when it is asked for, and the pages run.
+            Err(e) => {
+                eprintln!("the kernel's uevents are not listened for: {e:#}");
+                let mut fds = [0; 2];
+                if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
+                    return Err(io::Error::last_os_error()).context("make a pipe in the uevent socket's stead");
+                }
+                let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+                let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+                let wakeful = Wakeful::new()?;
+                wakeful.add(read.as_raw_fd())?;
+                Ok(Listener { socket: None, _idle: Some(write), wakeful })
+            }
+        }
+    }
+
+    /// The kernel's uevent socket, bound to the group its uevents go to.
+    fn socket() -> Result<OwnedFd> {
         let fd = unsafe {
             libc::socket(libc::AF_NETLINK, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, libc::NETLINK_KOBJECT_UEVENT)
         };
@@ -33,9 +61,7 @@ impl Listener {
         if unsafe { libc::bind(fd, (&addr as *const libc::sockaddr_nl).cast(), len) } != 0 {
             return Err(io::Error::last_os_error()).context("listen for the kernel's uevents");
         }
-        let wakeful = Wakeful::new()?;
-        wakeful.add(fd)?;
-        Ok(Listener { socket, wakeful })
+        Ok(socket)
     }
 
     /// Readable while a uevent waits.
@@ -46,10 +72,11 @@ impl Listener {
     /// Empty the socket: whether a uevent came, or so many came that the
     /// socket could not hold them all.
     pub fn heard(&self) -> Result<bool> {
+        let Some(socket) = &self.socket else { return Ok(false) };
         let mut buf = [0u8; 8192];
         let mut any = false;
         loop {
-            let n = unsafe { libc::recv(self.socket.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len(), 0) };
+            let n = unsafe { libc::recv(socket.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len(), 0) };
             if n >= 0 {
                 any = true;
                 continue;

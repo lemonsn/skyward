@@ -95,6 +95,12 @@ fn start_one(program: &Started, libraries: Option<&Path>, known: &HashMap<String
     ready(&waiting)
 }
 
+/// Wait for the service `program` says it is ready with, without starting
+/// it: init has started it, in the domain its own script names for it.
+pub fn await_ready(program: &Started) -> Result<()> {
+    ready(&program.service)
+}
+
 /// Run `program` once to its end and give how it ended, as init runs a
 /// program one of its scripts has it run before it goes on: however the
 /// program ends, init goes on, and so may whoever asks here. It runs as

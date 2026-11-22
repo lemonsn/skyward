@@ -45,15 +45,25 @@ enum Through {
     ElementService,
     /// A service of the secure element's maker's own, by its interface.
     Own(&'static str),
+    /// Qualcomm's secure processing unit, which the weaver reaches over
+    /// the shared memory it opens, and which its own service brings up.
+    Spu,
 }
+
+/// The service that brings the secure processing unit up, and what its
+/// program's file is named after.
+const SPU: &str = "vendor.qti.hardware.spu.ISPUManager";
+const SPU_SERVICE: &str = "spu-service";
 
 /// The makes of weaver, each by what the name of its program ends in, the
 /// longer endings first: Thales' and NXP's go through Android's secure
-/// element service, and Goodix's, whose program is named after no maker,
-/// through Goodix's own.
-const WEAVERS: [(&str, Through); 3] = [
+/// element service, Goodix's, whose program is named after no maker,
+/// through Goodix's own, and Qualcomm's through its secure processing
+/// unit.
+const WEAVERS: [(&str, Through); 4] = [
     (".thales", Through::ElementService),
     (".nxp-qti", Through::ElementService),
+    ("-spu-qti", Through::Spu),
     ("weaver-service", Through::Own("vendor.goodix.hardware.secure_element_aidl.IGdxEse")),
 ];
 
@@ -248,6 +258,16 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
                 .find(|s| s.described.kind == Kind::Aidl && format!("{}.{}", s.described.package, s.described.interface) == *interface)
                 .with_context(|| format!("{} goes through {interface}, which the phone does not describe", program.path))?;
             out.push(Step::Start(Box::new(element(phone, &own.described.name())?)));
+        }
+        Through::Spu => {
+            let own = phone
+                .services
+                .iter()
+                .find(|s| s.described.kind == Kind::Aidl && format!("{}.{}", s.described.package, s.described.interface) == SPU)
+                .with_context(|| format!("{} goes through {SPU}, which the phone does not describe", program.path))?;
+            let name = own.described.name();
+            let service = behind(phone, "the secure processing unit's service", &name, |file| file.contains(SPU_SERVICE))?;
+            out.push(Step::Start(Box::new(started(phone, service, Ready::Service(name.clone()), besides(phone, service, &name, |_| false)))));
         }
         Through::ElementService => {
             ensure!(described(phone, Kind::Aidl, ELEMENT_SERVICE).is_some(), "{} goes through {ELEMENT_SERVICE}, which the phone does not describe", program.path);

@@ -8,15 +8,26 @@ pub mod modprobe;
 /// Where a module source's files are in the recovery: the vendor_boot
 /// ramdisk's modules under /lib/modules, the vendor_dlkm and vendor
 /// partitions where they are mounted, and the kernel's own modules in
-/// system_dlkm, which it also keeps in one folder.
-pub fn source_dir(source: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(match source {
-        "vendor_boot" => "/lib/modules",
-        "vendor_dlkm" => "/vendor_dlkm/lib/modules",
-        "vendor" => "/vendor/lib/modules",
-        "system_dlkm" => "/system_dlkm/flatten/lib/modules",
+/// system_dlkm, which keeps them under /system_dlkm/lib/modules where it
+/// mounts that partition, or under flatten/ where AOSP's build puts them.
+pub fn source_dirs(source: &str) -> Result<Vec<PathBuf>> {
+    Ok(match source {
+        "vendor_boot" => vec![PathBuf::from("/lib/modules")],
+        "vendor_dlkm" => vec![PathBuf::from("/vendor_dlkm/lib/modules")],
+        "vendor" => vec![PathBuf::from("/vendor/lib/modules")],
+        "system_dlkm" => vec![
+            PathBuf::from("/system_dlkm/lib/modules"),
+            PathBuf::from("/system_dlkm/flatten/lib/modules"),
+        ],
         _ => bail!("unknown module source {source:?}"),
-    }))
+    })
+}
+
+/// The one folder a source's modules are read from: the first of its
+/// layouts that exists, or the first named where none does.
+pub fn source_dir(source: &str) -> Result<PathBuf> {
+    let dirs = source_dirs(source)?;
+    Ok(dirs.iter().find(|d| d.is_dir()).cloned().unwrap_or_else(|| dirs[0].clone()))
 }
 
 /// Load `names` (module names without `.ko`) with their dependencies. Each
@@ -33,8 +44,17 @@ pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Vec<PathBuf>> {
             .ok_or_else(|| anyhow!("{file} is in none of {dirs:?}"))?;
         let graph = parse_dep(dir)?;
         for m in graph.load_order(std::slice::from_ref(&file)) {
-            let path = graph
-                .resolve_path(&m)
+            // A module's dependencies are not always in the folder its own
+            // modules.dep came from: cfg80211 is on vendor_dlkm and depends
+            // on rfkill, which is on system_dlkm, so every folder the
+            // configuration named is searched before the file is called
+            // missing.
+            let path = dirs
+                .iter()
+                .find_map(|d| {
+                    let direct = d.join(&m);
+                    direct.is_file().then_some(direct).or_else(|| find_file(d, &m))
+                })
                 .ok_or_else(|| anyhow!("{m} is listed in {}/modules.dep but missing", dir.display()))?;
             insmod(&path, "")?;
             loaded.push(path);

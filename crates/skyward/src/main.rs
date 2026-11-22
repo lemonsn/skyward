@@ -507,7 +507,17 @@ fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
 
 /// Load `names` from the module sources the configuration lists.
 fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
-    let dirs = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
+    // A source may keep its modules in more than one layout, as system_dlkm
+    // does; every one of them is searched, in the order the source names.
+    let dirs: Vec<_> = cfg
+        .modules
+        .sources
+        .iter()
+        .map(|s| skyward_modules::source_dirs(s))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
     skyward_modules::load(&dirs, names)
 }
 

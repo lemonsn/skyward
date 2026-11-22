@@ -162,12 +162,19 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         // What a policy keeps from a recovery is left out rather than
         // stopping the pages from coming up.
         cpu: cpu(Path::new(CPU)).unwrap_or(Cpu { cores: 0, max_khz: None }),
-        ram_kib: read("/proc/meminfo").ok().and_then(|text| mem_total(&text).ok()).unwrap_or(0),
+        ram_kib: {
+            let from_kernel = mem_total_kib();
+            if from_kernel > 0 {
+                from_kernel
+            } else {
+                read("/proc/meminfo").ok().and_then(|text| mem_total(&text).ok()).unwrap_or(0)
+            }
+        },
         panel: (d.width > 0 && d.height > 0).then_some((d.width, d.height)),
         screen: d.diagonal,
         os_version: system.get(&cfg.device.os_version_prop),
         android: system.get("ro.build.version.release"),
-        locale: system.get("ro.product.locale"),
+        locale: locale(&system),
         security_patch: system.get("ro.build.version.security_patch").map(|s| s.parse()).transpose()?,
         kernel: kernel_release()?,
         storage: storage().unwrap_or(Storage { total: 0, free: None }),
@@ -338,14 +345,60 @@ fn kernel_release() -> Result<String> {
     Ok(release.to_str().context("kernel release is not UTF-8")?.to_string())
 }
 
+/// The language the phone starts in: the one its product locale names, or
+/// the language and region its build describes where that locale is English
+/// but its language is not, which is how a Chinese system names itself.
+fn locale(system: &SystemProps) -> Option<String> {
+    let product = system.get("ro.product.locale");
+    if product.as_deref().is_some_and(|p| !p.starts_with("en")) {
+        return product;
+    }
+    let built = system
+        .get("ro.product.locale.language")
+        .filter(|l| !l.starts_with("en"))
+        .map(|l| match system.get("ro.product.locale.region") {
+            Some(region) => format!("{l}-{region}"),
+            None => l,
+        });
+    built.or(product)
+}
+
+/// The phone's memory in KiB, from the kernel's own reading of it, which a
+/// policy does not keep from a recovery the way /proc/meminfo is.
+fn mem_total_kib() -> u64 {
+    let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sysinfo(&mut info) } != 0 || info.mem_unit == 0 {
+        return 0;
+    }
+    info.totalram as u64 * info.mem_unit as u64 / 1024
+}
+
 fn storage() -> Result<Storage> {
     let link = Path::new(skyward_block::BY_NAME).join("userdata");
     let dev = fs::canonicalize(&link).with_context(|| format!("resolve {}", link.display()))?;
     let name = dev.file_name().ok_or_else(|| anyhow!("{} has no device name", dev.display()))?;
-    let sectors: u64 = parse(&read(Path::new(SYS_BLOCK).join(name).join("size"))?, "block size")?;
+    // The size comes from the kernel itself where a policy keeps the block
+    // class of sysfs from the recovery.
+    let sectors = match read(Path::new(SYS_BLOCK).join(name).join("size")).ok().and_then(|t| parse(&t, "block size").ok()) {
+        Some(sectors) => sectors,
+        None => device_bytes(&dev).context("size of the data partition")? / 512,
+    };
     let data = Path::new("/data");
     let free = if is_mountpoint(data)? { Some(skyward_block::mount::space(data).context("read the room in /data")?.free) } else { None };
     Ok(Storage { total: sectors * 512, free })
+}
+
+/// The size of a block device in bytes, as the kernel gives it.
+fn device_bytes(dev: &Path) -> Result<u64> {
+    use std::os::fd::AsRawFd;
+    let file = fs::File::open(dev).with_context(|| format!("open {}", dev.display()))?;
+    let mut bytes: u64 = 0;
+    // _IOR(0x12, 114, size_t): the size of a block device in bytes.
+    const BLKGETSIZE64: libc::c_int = 0x8008_1272u32 as libc::c_int;
+    if unsafe { libc::ioctl(file.as_raw_fd(), BLKGETSIZE64, &mut bytes) } != 0 {
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("size of {}", dev.display()));
+    }
+    Ok(bytes)
 }
 
 /// A directory is a mountpoint when it lives on a different filesystem from

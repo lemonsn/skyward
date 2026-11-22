@@ -28,11 +28,11 @@ use std::time::{Duration, Instant};
 const FIRMWARE: &str = "/etc/firmware";
 
 /// Where a partition a firmware file is read from is mounted meanwhile.
-const PARTITIONS: &str = "/skyward/wlan";
+const PARTITIONS: &str = "/tmp/skyward/wlan";
 
 /// The supplicant's settings, and the folder of its control socket, in the
 /// recovery service's own folder.
-const HOME: &str = "/skyward/run/supplicant";
+const HOME: &str = "/tmp/skyward/run/supplicant";
 
 /// The user the supplicant takes on as it starts, who has to be able to
 /// make its socket.

@@ -71,14 +71,14 @@ const REST: Duration = Duration::from_secs(5);
 
 /// Where logs saved to the temporary folder go, in the recovery service's
 /// own folder, and where in internal storage the others do.
-const TMP_LOGS: &str = "/skyward/run/logs";
+const TMP_LOGS: &str = "/tmp/skyward/run/logs";
 const STORAGE_LOGS: &str = "Skyward/logs";
 
 /// The folder of internal storage the system saves its own screenshots in,
 /// which the gallery shows as its screenshots, and where in the recovery
 /// service's own folder a screenshot waits for internal storage to open.
 const SCREENSHOTS: &str = "DCIM/Screenshots";
-const HELD_SCREENSHOTS: &str = "/skyward/run/screenshots";
+const HELD_SCREENSHOTS: &str = "/tmp/skyward/run/screenshots";
 
 /// The panel backlight under /sys/class/backlight.
 struct Backlight {

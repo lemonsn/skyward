@@ -180,11 +180,11 @@ pub fn power(target: Power) -> Result<()> {
 /// wait for internal storage, the supplicant's settings. Install scripts
 /// written for other recoveries often empty /tmp before they start; this
 /// folder is out of their way.
-pub const RUN: &str = "/skyward/run";
+pub const RUN: &str = "/tmp/skyward/run";
 
 /// Where the recovery service keeps the lines it writes to the kernel log
 /// for as long as the phone stays in recovery.
-pub const LOG: &str = "/skyward/run/recovery.log";
+pub const LOG: &str = "/tmp/skyward/run/recovery.log";
 
 /// The file [`kmsg`] writes its lines to as well, once [`keep_log`] opened
 /// it.

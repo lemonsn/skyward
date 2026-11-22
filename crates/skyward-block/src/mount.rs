@@ -98,7 +98,7 @@ mod sys {
 
     /// Where mounts wait while the mount point above them is covered or
     /// uncovered. It is on rootfs, which is private during the moves.
-    const PARK: &str = "/skyward/park";
+    const PARK: &str = "/tmp/skyward/park";
 
     fn cstr(p: &Path) -> Result<CString> {
         CString::new(p.as_os_str().as_bytes()).with_context(|| format!("{} holds a NUL", p.display()))

@@ -6,7 +6,7 @@ pub const PERSIST: &str = "/dev/block/by-name/persist";
 
 /// Where the recovery mounts persist while it reads, read-only, when it is
 /// not mounted already.
-pub const MOUNT: &str = "/skyward/persist";
+pub const MOUNT: &str = "/tmp/skyward/persist";
 
 /// The time daemon's offset for the time of day, relative to persist's root:
 /// milliseconds as a little-endian u64.

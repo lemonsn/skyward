@@ -41,12 +41,17 @@ pub fn mark(line: &str) {
         if let Ok(mut kmsg) = OpenOptions::new().write(true).open("/dev/kmsg") {
             let _ = writeln!(kmsg, "skyward-trace: {line}");
         }
-        let at = NEXT.fetch_add(1, Ordering::Relaxed) % SLOTS;
+        let at = NEXT.fetch_add(1, Ordering::Relaxed);
         let mut bytes = format!("{line}\n").into_bytes();
         bytes.truncate(SLOT as usize - 1);
         for device in devices() {
             let Ok(file) = OpenOptions::new().write(true).open(device) else { continue };
-            let _ = file.write_all_at(&bytes, AT + at as u64 * SLOT);
+            // What an earlier run left is cleared, so no line outlives it.
+            if at == 0 {
+                let blank = vec![0u8; SLOTS * SLOT as usize];
+                let _ = file.write_all_at(&blank, AT);
+            }
+            let _ = file.write_all_at(&bytes, AT + (at % SLOTS) as u64 * SLOT);
         }
     }
     #[cfg(not(target_os = "android"))]

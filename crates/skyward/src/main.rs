@@ -753,9 +753,17 @@ const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.
 #[cfg(target_os = "android")]
 fn adopt_installed_version(props: &std::collections::HashMap<String, String>) -> Result<()> {
     for name in BUILD_VERSION {
-        let value = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
+        let Some(value) = props.get(name) else {
+            skyward_sys::kmsg(&format!("the installed system says no {name}"))?;
+            continue;
+        };
         if skyward_sys::prop(name).as_ref() != Some(value) {
-            skyward_sys::set_prop(name, value)?;
+            // init refuses a ro.* property once it has started; the phone's
+            // own build still describes itself where it is read.
+            if let Err(e) = skyward_sys::set_prop(name, value) {
+                skyward_sys::kmsg(&format!("{name} left as it is: {e:#}"))?;
+                continue;
+            }
         }
         skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
     }

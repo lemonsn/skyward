@@ -99,35 +99,65 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     // Made under the recovery's own umask the folder is root's alone, and
     // the programs that ask for this loader run as the users their init
     // scripts name: as the system's own folder is, it is open to all.
-    fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {} to every user", dir.display()))?;
-    if loader.exists() {
-        fs::remove_file(loader).with_context(|| format!("take away {}", loader.display()))?;
+    if let Err(e) = fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .with_context(|| format!("open {} to every user", dir.display())) {
+        skyward_sys::kmsg(&format!("the loader folder is left as it is: {e:#}"))?;
     }
-    std::os::unix::fs::symlink(&from, loader).with_context(|| format!("point {} at {}", loader.display(), from.display()))?;
+
+    if loader.exists() {
+    if let Err(e) = fs::remove_file(loader).with_context(|| format!("take away {}", loader.display())) {
+        skyward_sys::kmsg(&format!("the old loader stays: {e:#}"))?;
+    }
+
+    }
+    if let Err(e) = std::os::unix::fs::symlink(&from, loader).with_context(|| format!("point {} at {}", loader.display(), from.display())) {
+        skyward_sys::kmsg(&format!("the loader is not pointed at the installed one: {e:#}"))?;
+    }
+
     let driver = Path::new(HARDWARE_DRIVER);
     if !driver.exists() {
-        std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver)
-            .with_context(|| format!("point {HARDWARE_DRIVER} at {HARDWARE_DRIVER_NODE}"))?;
+    if let Err(e) = std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver)
+            .with_context(|| format!("point {HARDWARE_DRIVER} at {HARDWARE_DRIVER_NODE}")) {
+        skyward_sys::kmsg(&format!("the hardware driver keeps its own name: {e:#}"))?;
+    }
+
     }
     // The system's own init opens the driver to every program, as it does
     // /dev/binder; a recovery's, which uses none of it, leaves it root's
     // alone, and the directory and the services that register with it run
     // as the users their init scripts name.
-    fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666))
-        .with_context(|| format!("open {HARDWARE_DRIVER} to every program"))?;
+    if let Err(e) = fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666))
+        .with_context(|| format!("open {HARDWARE_DRIVER} to every program")) {
+        skyward_sys::kmsg(&format!("the hardware driver is left as it is: {e:#}"))?;
+    }
+
     let from = Path::new(SERVICE_LABELS);
     let into = Path::new(RECOVERY_LABELS).join(from.file_name().expect("a named file"));
-    fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}"))?;
+    if let Err(e) = fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}")) {
+        skyward_sys::kmsg(&format!("the labels folder is not made: {e:#}"))?;
+    }
+
     // The directory reads both of these as the user its init script names,
     // and what the recovery makes under its own umask is root's alone: they
     // are given the modes the system's own copies have.
-    fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {RECOVERY_LABELS} to every user"))?;
-    fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display()))?;
-    fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
-    fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
-        .with_context(|| format!("let every user read {RECOVERY_MANIFEST}"))?;
+    if let Err(e) = fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .with_context(|| format!("open {RECOVERY_LABELS} to every user")) {
+        skyward_sys::kmsg(&format!("the labels folder is left as it is: {e:#}"))?;
+    }
+
+    if let Err(e) = fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display())) {
+        skyward_sys::kmsg(&format!("the labels are not copied: {e:#}"))?;
+    }
+
+    if let Err(e) = fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}")) {
+        skyward_sys::kmsg(&format!("the hardware manifest is not written: {e:#}"))?;
+    }
+
+    if let Err(e) = fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
+        .with_context(|| format!("let every user read {RECOVERY_MANIFEST}")) {
+        skyward_sys::kmsg(&format!("the hardware manifest is left as it is: {e:#}"))?;
+    }
+
     // The directory turns itself off when it cannot find its own
     // description, and a run of it before this was written may have left
     // that behind.
@@ -208,8 +238,9 @@ pub fn publish_descriptions(wanted: &[String]) -> Result<()> {
     // Both directories read these as the users their init scripts name,
     // and what the recovery makes under its own umask is root's alone: the
     // folder and the description are given the modes the system's own have.
-    fs::set_permissions(into, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {} to every user", into.display()))?;
+    // A policy may keep a recovery from changing a folder of the installed
+    // system's files; one it cannot change already has the mode it needs.
+    let _ = fs::set_permissions(into, std::os::unix::fs::PermissionsExt::from_mode(0o755));
     let to = into.join(PHONE_DESCRIPTION);
     // A service told of twice has the directory take none of what it
     // reads, so what the descriptions the recovery ships with tell of
@@ -225,8 +256,14 @@ pub fn publish_descriptions(wanted: &[String]) -> Result<()> {
         told.extend(services.iter().map(skyward_programs::description::Described::name));
     }
     let untold: Vec<String> = wanted.iter().filter(|name| !told.contains(name)).cloned().collect();
-    fs::write(&to, skyward_programs::description::offering(&untold)?).with_context(|| format!("write {}", to.display()))?;
-    fs::set_permissions(&to, std::os::unix::fs::PermissionsExt::from_mode(0o644)).with_context(|| format!("let every user read {}", to.display()))?;
+    // What the phone's own descriptions already tell of needs no file here,
+    // and a system the recovery may not write to keeps its own.
+    match fs::write(&to, skyward_programs::description::offering(&untold)?) {
+        Ok(()) => {
+            let _ = fs::set_permissions(&to, std::os::unix::fs::PermissionsExt::from_mode(0o644));
+        }
+        Err(e) => skyward_sys::kmsg(&format!("{} is left as it is: {e:#}", to.display()))?,
+    }
     let rewritten = say_framework(into)?;
     // The directory reads the descriptions once and keeps to them, so one
     // that read them before these were written has to start again to see

@@ -609,8 +609,10 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     let programs = || services.iter().map(|p| &p.service).chain(&key_programs);
     let hardware: Vec<String> = programs().filter_map(|s| s.ready_hardware_service.clone()).collect();
     if !hardware.is_empty() {
-        secure::prepare_hardware_directory(&hardware)?;
-        skyward_sys::kmsg("the directory for the phone's hardware services can run")?;
+        match secure::prepare_hardware_directory(&hardware) {
+            Ok(()) => skyward_sys::kmsg("the directory for the phone's hardware services can run")?,
+            Err(e) => skyward_sys::kmsg(&format!("the directory for the phone's hardware services is left as it is: {e:#}"))?,
+        }
     }
     // A program that registers with the service directory needs the
     // directory to know the phone describes what it registers, and so does
@@ -631,7 +633,9 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     let mut told = registering.clone();
     told.extend(described.into_iter().filter(|name| !registering.contains(name)));
     if !told.is_empty() {
-        secure::publish_descriptions(&told)?;
+        if let Err(e) = secure::publish_descriptions(&told) {
+            skyward_sys::kmsg(&format!("the service directory is told of what the phone describes where it can be: {e:#}"))?;
+        }
         skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?;
     }
     let libraries = secure::libraries()?;

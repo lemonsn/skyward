@@ -643,11 +643,13 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;
     }
     services::start(&services, libraries.as_deref())?;
+    trace::mark("the recovery's own programs started");
     let steps = found.context("make out from the phone's partitions how its keys are used")?;
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;
     }
     keys::start(&steps)?;
+    trace::mark("the phone's key programs are started");
     agree_on_the_notes_key(&registering)
 }
 

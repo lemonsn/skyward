@@ -159,8 +159,10 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         model: system.get("ro.product.marketname").unwrap_or_else(|| cfg.device.model.clone()),
         codename: cfg.device.codename.clone(),
         soc: cfg.device.soc.clone(),
-        cpu: cpu(Path::new(CPU))?,
-        ram_kib: mem_total(&read("/proc/meminfo")?)?,
+        // What a policy keeps from a recovery is left out rather than
+        // stopping the pages from coming up.
+        cpu: cpu(Path::new(CPU)).unwrap_or(Cpu { cores: 0, max_khz: None }),
+        ram_kib: read("/proc/meminfo").ok().and_then(|text| mem_total(&text).ok()).unwrap_or(0),
         panel: (d.width > 0 && d.height > 0).then_some((d.width, d.height)),
         screen: d.diagonal,
         os_version: system.get(&cfg.device.os_version_prop),
@@ -168,7 +170,7 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         locale: system.get("ro.product.locale"),
         security_patch: system.get("ro.build.version.security_patch").map(|s| s.parse()).transpose()?,
         kernel: kernel_release()?,
-        storage: storage()?,
+        storage: storage().unwrap_or(Storage { total: 0, free: None }),
         battery,
         slot: skyward_vab::current_slot()?,
         snapshot: skyward_vab::snapshot_state()?,

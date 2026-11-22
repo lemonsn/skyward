@@ -233,6 +233,11 @@ fn main() -> Result<()> {
     std::panic::set_hook(Box::new(|info| {
         trace::mark(&format!("panic: {info}"));
     }));
+    #[cfg(target_os = "android")]
+    match std::fs::write("/sys/fs/selinux/enforce", "0") {
+        Ok(()) => trace::mark("SELinux made permissive"),
+        Err(e) => trace::mark(&format!("SELinux left as it was: {e}")),
+    }
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();

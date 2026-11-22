@@ -225,6 +225,14 @@ enum Cmd {
 }
 
 fn main() -> Result<()> {
+    trace::mark(&format!(
+        "main {} as {}",
+        skyward_info::VERSION,
+        std::env::args_os().next().unwrap_or_default().to_string_lossy()
+    ));
+    std::panic::set_hook(Box::new(|info| {
+        trace::mark(&format!("panic: {info}"));
+    }));
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();

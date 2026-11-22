@@ -580,8 +580,17 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
             Err(e) => skyward_sys::kmsg(&format!("{name} is not mounted: {e:#}"))?,
         }
     }
-    for path in load_modules(cfg, &cfg.modules.load)? {
-        skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+    // init alone may put modules in the kernel; the recovery's own domain is
+    // not allowed to. What it cannot load is left to the rules the image
+    // carries, which init runs once this is set.
+    skyward_sys::set_prop("sys.skyward.modules", "1").ok();
+    match load_modules(cfg, &cfg.modules.load) {
+        Ok(paths) => {
+            for path in paths {
+                skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+            }
+        }
+        Err(e) => skyward_sys::kmsg(&format!("the modules are left to init: {e:#}"))?,
     }
     if !cfg.owners.is_empty() {
         let handed = hand_over(&cfg.owners)?;

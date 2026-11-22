@@ -59,6 +59,11 @@ enum Cmd {
         /// The device configuration, devices/<codename>.toml.
         #[arg(long)]
         config: PathBuf,
+        /// An init script for the ramdisk's /system/etc/init, for what only
+        /// init may do, such as putting the touchscreen's modules in the
+        /// kernel.
+        #[arg(long)]
+        init_rc: Option<PathBuf>,
         /// The UI typeface.
         #[arg(long)]
         font: PathBuf,
@@ -125,7 +130,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, init_rc, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -149,6 +154,11 @@ fn main() -> Result<()> {
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
+            if let Some(rc) = &init_rc {
+                let name = rc.file_name().with_context(|| format!("{} has no name", rc.display()))?;
+                let path = format!("system/etc/init/{}", name.to_string_lossy());
+                rd.add(&path, 0o644, read(rc)?)?;
+            }
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {

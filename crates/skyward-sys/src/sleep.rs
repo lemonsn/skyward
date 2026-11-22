@@ -58,7 +58,12 @@ pub struct Sleeper {
 
 impl Sleeper {
     pub fn start() -> Result<Sleeper> {
-        fs::write(MEM_SLEEP, "s2idle").with_context(|| format!("write s2idle to {MEM_SLEEP}"))?;
+        // A policy may keep the recovery from choosing how the phone
+        // sleeps; it sleeps as the kernel chose, and the rest works the
+        // same.
+        if let Err(e) = fs::write(MEM_SLEEP, "s2idle") {
+            eprintln!("the phone sleeps as the kernel chose: {e:#}");
+        }
         let (tell, told) = worker::telling().context("make the sleeper's wake pipe")?;
         let leave = Arc::new((Mutex::new(Leave { allowed: false, not_before: Instant::now() }), Condvar::new()));
         let shared = leave.clone();

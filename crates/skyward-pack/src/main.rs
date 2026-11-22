@@ -64,6 +64,11 @@ enum Cmd {
         /// kernel.
         #[arg(long)]
         init_rc: Option<PathBuf>,
+        /// A folder of firmware files, each put where the kernel looks for
+        /// them before any program is asked, as a driver whose phone keeps
+        /// them on another partition reads them.
+        #[arg(long)]
+        firmware_dir: Option<PathBuf>,
         /// The UI typeface.
         #[arg(long)]
         font: PathBuf,
@@ -130,7 +135,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, init_rc, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, init_rc, firmware_dir, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -158,6 +163,17 @@ fn main() -> Result<()> {
                 let name = rc.file_name().with_context(|| format!("{} has no name", rc.display()))?;
                 let path = format!("system/etc/init/{}", name.to_string_lossy());
                 rd.add(&path, 0o644, read(rc)?)?;
+            }
+            if let Some(dir) = &firmware_dir {
+                for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+                    let entry = entry?;
+                    if !entry.file_type()?.is_file() {
+                        continue;
+                    }
+                    let name = entry.file_name();
+                    let path = format!("lib/firmware/{}", name.to_string_lossy());
+                    rd.add(&path, 0o644, read(&entry.path())?)?;
+                }
             }
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.

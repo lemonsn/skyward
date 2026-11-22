@@ -349,10 +349,19 @@ fn behind<'a>(phone: &'a Phone, what: &str, name: &str, matches: impl Fn(&str) -
         None => Vec::new(),
     };
     let matching: Vec<&Program> = may.iter().copied().filter(|p| matches(file_name(p))).collect();
+    let carried = matching.clone();
     for candidates in [saying, described_with, matching] {
         if let Some(program) = one(phone, what, candidates)? {
             return Ok(program);
         }
+    }
+    // A script may start a program only where a property holds that the
+    // phone's own scripts set, and a recovery may not be let run those. A
+    // phone with exactly one such program carried on its partitions means
+    // that one, as its init would start it once the property held.
+    let carried: Vec<&Program> = carried.into_iter().filter(|p| phone.carries(p)).collect();
+    if let [program] = carried[..] {
+        return Ok(program);
     }
     bail!("no script of the phone's runs {what}, which would register {name}")
 }

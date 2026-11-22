@@ -101,12 +101,16 @@ pub fn serves_elements(steps: &[Step]) -> bool {
 /// program names every folder its libraries are looked for in.
 pub fn start(steps: &[Step]) -> Result<()> {
     for step in steps {
-        match step {
-            Step::Start(program) => crate::services::start(std::slice::from_ref(program.as_ref()), None)?,
-            Step::ServeElements => {
-                let readers = skyward_omapi::start()?;
-                skyward_sys::kmsg(&format!("{} is served, with a reader for each of {} secure elements: {}", skyward_omapi::SERVICE, readers.len(), readers.join(", ")))?;
-            }
+        let result = match step {
+            Step::Start(program) => crate::services::start(std::slice::from_ref(program.as_ref()), None),
+            Step::ServeElements => skyward_omapi::start().and_then(|readers| {
+                skyward_sys::kmsg(&format!("{} is served, with a reader for each of {} secure elements: {}", skyward_omapi::SERVICE, readers.len(), readers.join(", ")))
+            }),
+        };
+        // A program that uses the phone's keys may be kept from starting by a
+        // policy; the ones after it still get their turn.
+        if let Err(e) = result {
+            skyward_sys::kmsg(&format!("a program of the phone's keys is not started: {e:#}"))?;
         }
     }
     Ok(())

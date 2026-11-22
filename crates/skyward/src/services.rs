@@ -95,12 +95,6 @@ fn start_one(program: &Started, libraries: Option<&Path>, known: &HashMap<String
     ready(&waiting)
 }
 
-/// Wait for the service `program` says it is ready with, without starting
-/// it: init has started it, in the domain its own script names for it.
-pub fn await_ready(program: &Started) -> Result<()> {
-    ready(&program.service)
-}
-
 /// Run `program` once to its end and give how it ended, as init runs a
 /// program one of its scripts has it run before it goes on: however the
 /// program ends, init goes on, and so may whoever asks here. It runs as
@@ -344,6 +338,7 @@ fn ready(s: &Service) -> Result<()> {
         _ => return Ok(()),
     };
     let until = Instant::now() + READY_TIMEOUT;
+    let mut told = Instant::now();
     loop {
         if let Some(name) = &s.ready_property
             && skyward_sys::prop(name).is_some_and(|v| !v.is_empty())
@@ -364,6 +359,10 @@ fn ready(s: &Service) -> Result<()> {
         }
         if Instant::now() >= until {
             bail!("{} {waited_on} in {} seconds", s.path, READY_TIMEOUT.as_secs());
+        }
+        if told.elapsed() >= Duration::from_secs(5) {
+            told = Instant::now();
+            crate::trace::mark(&format!("{} is not ready yet", s.path));
         }
         thread::sleep(READY_POLL);
     }

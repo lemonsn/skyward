@@ -105,28 +105,13 @@ pub fn serves_elements(steps: &[Step]) -> bool {
 /// the weaver that reaches its secure element through it starts. Each
 /// program names every folder its libraries are looked for in.
 pub fn start(steps: &[Step]) -> Result<()> {
-    // init starts the phone's key programs in the domains their own scripts
-    // name, where the image's rules have it start them; the recovery then
-    // only waits for them.
-    // init acts on the property in its own time, after it has run the rules
-    // the image carries; until it says so the recovery waits for it.
-    let mut by_init = false;
-    for _ in 0..100 {
-        if skyward_sys::prop(BY_INIT).is_some_and(|value| !value.is_empty()) {
-            by_init = true;
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
     for step in steps {
         let what = match step {
-            Step::Start(program) if by_init => format!("waiting for {}", program.service.path),
             Step::Start(program) => format!("starting {}", program.service.path),
             Step::ServeElements => format!("serving {}", skyward_omapi::SERVICE),
         };
         crate::trace::mark(&what);
         let result = match step {
-            Step::Start(program) if by_init => crate::services::await_ready(program.as_ref()),
             Step::Start(program) => crate::services::start(std::slice::from_ref(program.as_ref()), None),
             Step::ServeElements => skyward_omapi::start().and_then(|readers| {
                 skyward_sys::kmsg(&format!("{} is served, with a reader for each of {} secure elements: {}", skyward_omapi::SERVICE, readers.len(), readers.join(", ")))
@@ -144,10 +129,6 @@ pub fn start(steps: &[Step]) -> Result<()> {
     }
     Ok(())
 }
-
-/// The property init sets once it has started the programs that use the
-/// phone's keys.
-const BY_INIT: &str = "sys.skyward.keys";
 
 /// What `steps` are, a line each, as the `keys` command prints them.
 pub fn describe(steps: &[Step]) -> Vec<String> {
